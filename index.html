@@ -114,7 +114,9 @@ textarea:focus { outline: none; border-color: var(--yellow); background: #fff; }
 .seg button { display: flex; align-items: center; justify-content: center; gap: 8px; padding: 12px 8px; border-radius: 12px; font-weight: 900; color: #7B8070; }
 .seg button[aria-pressed="true"].q { background: var(--qris); color: #fff; box-shadow: 0 3px 0 #1E4F9E; }
 .seg button[aria-pressed="true"].c { background: var(--cash); color: #fff; box-shadow: 0 3px 0 #1E6B40; }
-.cashbox { display: grid; gap: 8px; }
+.cashbox { display: grid; grid-template-columns: minmax(0, 1fr); gap: 8px; }
+.cashin input { width: 100%; }
+.discrow > * { min-width: 0; }
 .cashin { display: flex; align-items: center; gap: 8px; border: 2px solid var(--line); background: #FBFAF2; border-radius: 14px; padding: 0 12px; }
 .cashin:focus-within { border-color: var(--cash); background: #fff; }
 .cashin span { font-weight: 900; color: var(--mute); }
@@ -128,6 +130,20 @@ textarea:focus { outline: none; border-color: var(--yellow); background: #fff; }
 .change.exact { background: var(--cash-bg); color: var(--cash); }
 .change.short { background: var(--red-bg); color: var(--red); }
 .rec .chg { display: block; margin-top: 3px; font-size: .78rem; font-weight: 800; color: var(--cash); }
+.cart, .cart-foot, .cart-foot > * { min-width: 0; max-width: 100%; }
+.quick button { min-width: 0; }
+.discrow { display: flex; gap: 8px; align-items: stretch; flex-wrap: wrap; }
+.discrow { flex-wrap: nowrap; }
+.quick.d { flex: 1 1 0; flex-wrap: nowrap; min-width: 0; }
+.quick.d button { padding: 6px 2px; }
+.quick.d button { border-color: #E9CB6B; background: #FFF4C8; color: #8A5E00; }
+.quick.d button[aria-pressed="true"] { background: var(--yellow); color: var(--green-dk); border-color: var(--yellow); box-shadow: 0 2px 0 #C9951A; }
+.discin { flex: 0 0 106px; }
+.discin input { padding: 8px 0; font-size: 1.05rem; text-align: right; }
+.dline { display: grid; gap: 2px; font-size: .86rem; font-weight: 800; color: var(--mute); background: #FFF8DC; border-radius: 12px; padding: 8px 12px; }
+.dline div { display: flex; justify-content: space-between; gap: 10px; }
+.dline .off { color: #B26A00; }
+.rec .dsc { display: block; margin-top: 3px; font-size: .78rem; font-weight: 800; color: #B26A00; }
 .totalrow { display: grid; grid-template-columns: auto 1fr; gap: 10px; align-items: stretch; }
 .total { background: #F6F3E3; border-radius: 14px; padding: 8px 14px; }
 .total small { display: block; font-size: .66rem; letter-spacing: .12em; font-weight: 900; color: var(--mute); text-transform: uppercase; }
@@ -255,6 +271,12 @@ textarea:focus { outline: none; border-color: var(--yellow); background: #fff; }
         <div class="lines" id="lines"></div>
         <div class="cart-foot">
           <div class="field"><label for="note">Special requests <em>optional</em></label><textarea id="note" rows="2" maxlength="160" placeholder="e.g. less ice, no straw, extra sour…"></textarea></div>
+          <div class="field" id="discbox"><label for="discIn">Discount <em>optional</em></label>
+            <div class="discrow">
+              <div class="quick d" id="discQuick" role="group" aria-label="Discount"><button type="button" data-disc="0" aria-pressed="true">None</button><button type="button" data-disc="10" aria-pressed="false">10%</button><button type="button" data-disc="25" aria-pressed="false">25%</button><button type="button" data-disc="50" aria-pressed="false">50%</button></div>
+              <div class="cashin discin"><input id="discIn" type="text" inputmode="numeric" autocomplete="off" placeholder="Other" aria-label="Other discount percent"><span>%</span></div>
+            </div>
+          </div>
           <div class="field"><label>Payment</label>
             <div class="seg" role="group" aria-label="Payment method">
               <button class="q" id="payQ" aria-pressed="false"><svg class="i" viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><path d="M14 14h3v3h-3zM20 14v.01M14 20h3M20 17v4"/></svg>QRIS</button>
@@ -267,6 +289,7 @@ textarea:focus { outline: none; border-color: var(--yellow); background: #fff; }
             <div class="quick" id="quick" role="group" aria-label="Quick amounts"><button type="button" data-cash="exact">Exact</button><button type="button" data-cash="20000">20K</button><button type="button" data-cash="50000">50K</button><button type="button" data-cash="100000">100K</button></div>
             <div class="change" id="change" role="status" aria-live="polite"></div>
           </div>
+          <div class="dline" id="dline" hidden></div>
           <div class="totalrow"><div class="total"><small>Total</small><b id="total">Rp 0</b></div>
             <button class="btn green sendbtn" id="send" disabled><svg class="i" viewBox="0 0 24 24"><path d="M22 2L11 13M22 2l-7 20-4-9-9-4z"/></svg><span id="sendTxt">Send to kitchen</span></button></div>
         </div>
@@ -368,7 +391,7 @@ textarea:focus { outline: none; border-color: var(--yellow); background: #fff; }
     return Object.keys(raw.orders).map(function (id) {
       var o = raw.orders[id]; if (!o || typeof o !== "object") return null;
       var items = Array.isArray(o.items) ? o.items : Object.keys(o.items || {}).map(function (k) { return o.items[k]; });
-      return { id: id, no: +o.no || 0, items: items.filter(Boolean), note: o.note || "", pay: o.pay, total: +o.total || 0, cups: +o.cups || 0, paid: +o.paid || 0, change: +o.change || 0, created: +o.created || 0, status: o.status === "done" ? "done" : "pending", done: +o.done || 0 };
+      return { id: id, no: +o.no || 0, items: items.filter(Boolean), note: o.note || "", pay: o.pay, total: +o.total || 0, cups: +o.cups || 0, paid: +o.paid || 0, change: +o.change || 0, sub: +o.sub || 0, disc: +o.disc || 0, created: +o.created || 0, status: o.status === "done" ? "done" : "pending", done: +o.done || 0 };
     }).filter(Boolean);
   }
   function setAt(parts, val) {
@@ -549,7 +572,9 @@ textarea:focus { outline: none; border-color: var(--yellow); background: #fff; }
   /* ===== cashier ===== */
   function cartQty(k, s) { var n = 0; cart.lines.forEach(function (l) { if (l.k === k && l.s === s) n += l.q; }); return n; }
   function priceOf(k, s) { return s === "j" ? BY[k].jum : BY[k].reg; }
-  function cartTotal() { return cart.lines.reduce(function (a, l) { return a + priceOf(l.k, l.s) * l.q; }, 0); }
+  function cartSub() { return cart.lines.reduce(function (a, l) { return a + priceOf(l.k, l.s) * l.q; }, 0); }
+  function discPct() { var d = +cart.disc || 0; return d < 0 ? 0 : d > 100 ? 100 : d; }
+  function cartTotal() { return Math.round(cartSub() * (100 - discPct()) / 100); }
   function cartCups() { return cart.lines.reduce(function (a, l) { return a + l.q; }, 0); }
   var sending = false;
   function fmtIn(n) { return String(Math.round(n)).replace(/\B(?=(\d{3})+(?!\d))/g, "."); }
@@ -591,6 +616,11 @@ textarea:focus { outline: none; border-color: var(--yellow); background: #fff; }
         '<button class="rm" data-rm="' + i + '" aria-label="Remove ' + esc(m.name) + '">' + ico(I.trash) + "</button></div>";
     }).join("");
     var t = cartTotal(); $("total").textContent = rp(t);
+    var dp = discPct(), sub = cartSub();
+    $("dline").hidden = !(dp > 0 && cart.lines.length);
+    if (dp > 0) $("dline").innerHTML = "<div><span>Subtotal</span><span>" + rp(sub) + '</span></div><div class="off"><span>Discount ' + dp + "%</span><span>-" + rp(sub - t) + "</span></div>";
+    document.querySelectorAll("[data-disc]").forEach(function (b) { b.setAttribute("aria-pressed", String(+b.dataset.disc === dp)); });
+    var dtxt = dp && [10, 25, 50].indexOf(dp) < 0 ? String(dp) : ""; if ($("discIn").value !== dtxt && document.activeElement !== $("discIn")) $("discIn").value = dtxt;
     $("clearCart").disabled = !cart.lines.length;
     $("payQ").setAttribute("aria-pressed", cart.pay === "qris"); $("payC").setAttribute("aria-pressed", cart.pay === "cash");
     var cs = cashState(t), showCash = cart.pay === "cash" && cart.lines.length > 0;
@@ -623,6 +653,14 @@ textarea:focus { outline: none; border-color: var(--yellow); background: #fff; }
     var d = this.value.replace(/\D/g, "").slice(0, 9); cart.cash = d ? +d : 0;
     this.value = d ? fmtIn(+d) : ""; saveCart(); renderCart();
   });
+  $("discQuick").addEventListener("click", function (e) {
+    var b = e.target.closest("[data-disc]"); if (!b) return;
+    cart.disc = +b.dataset.disc; $("discIn").value = ""; saveCart(); renderCart();
+  });
+  $("discIn").addEventListener("input", function () {
+    var d = this.value.replace(/\D/g, "").slice(0, 3); var n = d ? Math.min(100, +d) : 0;
+    this.value = d ? String(n) : ""; cart.disc = n; saveCart(); renderCart();
+  });
   $("quick").addEventListener("click", function (e) {
     var b = e.target.closest("[data-cash]"); if (!b) return;
     cart.cash = b.dataset.cash === "exact" ? cartTotal() : +b.dataset.cash; saveCart(); renderCart();
@@ -632,6 +670,7 @@ textarea:focus { outline: none; border-color: var(--yellow); background: #fff; }
     var snap = JSON.parse(JSON.stringify(cart));
     var o = { items: cart.lines.map(function (l) { return { k: l.k, name: BY[l.k].name, size: l.s, qty: l.q, price: priceOf(l.k, l.s) }; }),
               note: (cart.note || "").trim(), pay: cart.pay, total: cartTotal(), cups: cartCups(), created: Date.now(), status: "pending" };
+    if (discPct() > 0) { o.sub = cartSub(); o.disc = discPct(); }
     var cs0 = cashState(o.total), chg = cs0.state === "change" ? cs0.change : 0;
     if (cs0.state === "change" || cs0.state === "exact") { o.paid = +cart.cash; o.change = chg; }
     sending = true; renderCart();
@@ -684,7 +723,7 @@ textarea:focus { outline: none; border-color: var(--yellow); background: #fff; }
     $("log").innerHTML = done.map(function (o) {
       var lines = o.items.map(function (it) { return it.qty + "× " + esc(it.name) + " (" + (it.size === "j" ? "Jumbo" : "Regular") + ")"; }).join("<br>");
       return '<div class="rec"><span class="no">#' + pad(o.no) + '</span><div class="it">' + lines + "<small>" + dayLabel(o.done || o.created) + "</small>" + (o.note ? '<span class="nt">Note: ' + esc(o.note) + "</span>" : "") + "</div>" +
-        '<div class="am"><span class="pay ' + (o.pay === "qris" ? "q" : "c") + '">' + ico(o.pay === "qris" ? I.qr : I.cash) + (o.pay === "qris" ? "QRIS" : "Cash") + "</span><br>" + rp(o.total) + (o.pay === "cash" && o.paid ? '<span class="chg">Paid ' + rp(o.paid) + (o.change ? " · change " + rp(o.change) : " · exact") + "</span>" : "") + "</div>" +
+        '<div class="am"><span class="pay ' + (o.pay === "qris" ? "q" : "c") + '">' + ico(o.pay === "qris" ? I.qr : I.cash) + (o.pay === "qris" ? "QRIS" : "Cash") + "</span><br>" + rp(o.total) + (o.disc ? '<span class="dsc">' + o.disc + "% off · was " + rp(o.sub) + "</span>" : "") + (o.pay === "cash" && o.paid ? '<span class="chg">Paid ' + rp(o.paid) + (o.change ? " · change " + rp(o.change) : " · exact") + "</span>" : "") + "</div>" +
         '<div class="acts"><button class="btn ghost" data-back="' + o.id + '">' + ico(I.undo) + ' Back to kitchen</button><button class="btn danger" data-del="' + o.id + '">' + ico(I.trash) + " Remove</button></div></div>";
     }).join("");
   }
@@ -698,11 +737,11 @@ textarea:focus { outline: none; border-color: var(--yellow); background: #fff; }
       function () { store.clear().then(function () { toast("All orders cleared"); }, failMsg("Clearing")); });
   };
   $("csv").onclick = function () {
-    var rows = [["Order", "Date", "Time done", "Payment", "Items", "Note", "Total (Rp)", "Cash received (Rp)", "Change (Rp)"]];
+    var rows = [["Order", "Date", "Time done", "Payment", "Items", "Note", "Total (Rp)", "Cash received (Rp)", "Change (Rp)", "Discount (%)", "Subtotal before discount (Rp)"]];
     doneOrders().slice().reverse().forEach(function (o) {
       var d = new Date(o.done || o.created);
       rows.push([pad(o.no), d.getFullYear() + "-" + ("0" + (d.getMonth() + 1)).slice(-2) + "-" + ("0" + d.getDate()).slice(-2), hhmm(o.done || o.created), o.pay === "qris" ? "QRIS" : "Cash",
-        o.items.map(function (it) { return it.qty + "x " + it.name + " (" + (it.size === "j" ? "Jumbo" : "Regular") + ")"; }).join("; "), o.note, o.total, o.paid || "", o.change || ""]);
+        o.items.map(function (it) { return it.qty + "x " + it.name + " (" + (it.size === "j" ? "Jumbo" : "Regular") + ")"; }).join("; "), o.note, o.total, o.paid || "", o.change || "", o.disc || "", o.sub || ""]);
     });
     var csv = "\ufeff" + rows.map(function (r) { return r.map(function (v) { return '"' + String(v).replace(/"/g, '""') + '"'; }).join(","); }).join("\r\n");
     var a = document.createElement("a"), d2 = new Date();
