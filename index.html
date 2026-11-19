@@ -114,6 +114,20 @@ textarea:focus { outline: none; border-color: var(--yellow); background: #fff; }
 .seg button { display: flex; align-items: center; justify-content: center; gap: 8px; padding: 12px 8px; border-radius: 12px; font-weight: 900; color: #7B8070; }
 .seg button[aria-pressed="true"].q { background: var(--qris); color: #fff; box-shadow: 0 3px 0 #1E4F9E; }
 .seg button[aria-pressed="true"].c { background: var(--cash); color: #fff; box-shadow: 0 3px 0 #1E6B40; }
+.cashbox { display: grid; gap: 8px; }
+.cashin { display: flex; align-items: center; gap: 8px; border: 2px solid var(--line); background: #FBFAF2; border-radius: 14px; padding: 0 12px; }
+.cashin:focus-within { border-color: var(--cash); background: #fff; }
+.cashin span { font-weight: 900; color: var(--mute); }
+.cashin input { flex: 1; min-width: 0; border: 0; background: transparent; font: inherit; font-size: 1.25rem; font-weight: 900; color: var(--ink); padding: 11px 0; outline: none; }
+.quick { display: flex; flex-wrap: wrap; gap: 6px; }
+.quick button { flex: 1 1 auto; min-height: 40px; padding: 6px 12px; border-radius: 10px; border: 2px solid #B5E3C6; background: var(--cash-bg); color: var(--cash); font-weight: 900; }
+.quick button:active { background: var(--cash); color: #fff; }
+.change { border-radius: 14px; padding: 10px 14px; display: flex; align-items: baseline; justify-content: space-between; gap: 10px; flex-wrap: wrap; background: #F6F3E3; color: var(--mute); font-weight: 800; }
+.change b { font-size: 1.6rem; letter-spacing: -.01em; }
+.change.ok { background: var(--cash); color: #fff; }
+.change.exact { background: var(--cash-bg); color: var(--cash); }
+.change.short { background: var(--red-bg); color: var(--red); }
+.rec .chg { display: block; margin-top: 3px; font-size: .78rem; font-weight: 800; color: var(--cash); }
 .totalrow { display: grid; grid-template-columns: auto 1fr; gap: 10px; align-items: stretch; }
 .total { background: #F6F3E3; border-radius: 14px; padding: 8px 14px; }
 .total small { display: block; font-size: .66rem; letter-spacing: .12em; font-weight: 900; color: var(--mute); text-transform: uppercase; }
@@ -247,6 +261,12 @@ textarea:focus { outline: none; border-color: var(--yellow); background: #fff; }
               <button class="c" id="payC" aria-pressed="false"><svg class="i" viewBox="0 0 24 24"><rect x="2.5" y="6" width="19" height="12" rx="2"/><circle cx="12" cy="12" r="2.5"/></svg>Cash</button>
             </div>
           </div>
+          <div class="field cashbox" id="cashbox" hidden>
+            <label for="cashIn">Cash received</label>
+            <div class="cashin"><span>Rp</span><input id="cashIn" type="text" inputmode="numeric" autocomplete="off" placeholder="Amount the customer hands you"></div>
+            <div class="quick" id="quick" role="group" aria-label="Quick amounts"><button type="button" data-cash="exact">Exact</button><button type="button" data-cash="20000">20K</button><button type="button" data-cash="50000">50K</button><button type="button" data-cash="100000">100K</button></div>
+            <div class="change" id="change" role="status" aria-live="polite"></div>
+          </div>
           <div class="totalrow"><div class="total"><small>Total</small><b id="total">Rp 0</b></div>
             <button class="btn green sendbtn" id="send" disabled><svg class="i" viewBox="0 0 24 24"><path d="M22 2L11 13M22 2l-7 20-4-9-9-4z"/></svg><span id="sendTxt">Send to kitchen</span></button></div>
         </div>
@@ -348,7 +368,7 @@ textarea:focus { outline: none; border-color: var(--yellow); background: #fff; }
     return Object.keys(raw.orders).map(function (id) {
       var o = raw.orders[id]; if (!o || typeof o !== "object") return null;
       var items = Array.isArray(o.items) ? o.items : Object.keys(o.items || {}).map(function (k) { return o.items[k]; });
-      return { id: id, no: +o.no || 0, items: items.filter(Boolean), note: o.note || "", pay: o.pay, total: +o.total || 0, cups: +o.cups || 0, created: +o.created || 0, status: o.status === "done" ? "done" : "pending", done: +o.done || 0 };
+      return { id: id, no: +o.no || 0, items: items.filter(Boolean), note: o.note || "", pay: o.pay, total: +o.total || 0, cups: +o.cups || 0, paid: +o.paid || 0, change: +o.change || 0, created: +o.created || 0, status: o.status === "done" ? "done" : "pending", done: +o.done || 0 };
     }).filter(Boolean);
   }
   function setAt(parts, val) {
@@ -532,6 +552,16 @@ textarea:focus { outline: none; border-color: var(--yellow); background: #fff; }
   function cartTotal() { return cart.lines.reduce(function (a, l) { return a + priceOf(l.k, l.s) * l.q; }, 0); }
   function cartCups() { return cart.lines.reduce(function (a, l) { return a + l.q; }, 0); }
   var sending = false;
+  function fmtIn(n) { return String(Math.round(n)).replace(/\B(?=(\d{3})+(?!\d))/g, "."); }
+  /* cash handling: nothing typed counts as exact; less than the total blocks sending; more shows the change */
+  function cashState(total) {
+    if (cart.pay !== "cash" || !total) return { state: "none" };
+    var got = +cart.cash || 0;
+    if (!got) return { state: "empty" };
+    if (got < total) return { state: "short", short: total - got };
+    if (got === total) return { state: "exact" };
+    return { state: "change", change: got - total };
+  }
 
   function buildMenu() {
     $("menu").innerHTML = MENU.map(function (m) {
@@ -563,8 +593,18 @@ textarea:focus { outline: none; border-color: var(--yellow); background: #fff; }
     var t = cartTotal(); $("total").textContent = rp(t);
     $("clearCart").disabled = !cart.lines.length;
     $("payQ").setAttribute("aria-pressed", cart.pay === "qris"); $("payC").setAttribute("aria-pressed", cart.pay === "cash");
-    var ok = cart.lines.length > 0 && !!cart.pay && !sending;
-    $("send").disabled = !ok; $("sendTxt").textContent = sending ? "Sending…" : !cart.lines.length ? "Add a drink first" : !cart.pay ? "Choose QRIS or Cash" : "Send to kitchen";
+    var cs = cashState(t), showCash = cart.pay === "cash" && cart.lines.length > 0;
+    $("cashbox").hidden = !showCash;
+    if (showCash) {
+      var ch = $("change");
+      if (cs.state === "short") { ch.className = "change short"; ch.innerHTML = "<span>Still short</span><b>" + rp(cs.short) + "</b>"; }
+      else if (cs.state === "change") { ch.className = "change ok"; ch.innerHTML = "<span>Give back change</span><b>" + rp(cs.change) + "</b>"; }
+      else if (cs.state === "exact") { ch.className = "change exact"; ch.innerHTML = "<span>Exact amount</span><b>No change</b>"; }
+      else { ch.className = "change"; ch.innerHTML = "<span>Type the cash received, or tap Exact</span>"; }
+      var wantTxt = cart.cash ? fmtIn(cart.cash) : ""; if ($("cashIn").value !== wantTxt && document.activeElement !== $("cashIn")) $("cashIn").value = wantTxt;
+    }
+    var ok = cart.lines.length > 0 && !!cart.pay && !sending && cs.state !== "short";
+    $("send").disabled = !ok; $("sendTxt").textContent = sending ? "Sending…" : !cart.lines.length ? "Add a drink first" : !cart.pay ? "Choose QRIS or Cash" : cs.state === "short" ? "Cash is not enough" : "Send to kitchen";
     if ($("note").value !== cart.note) $("note").value = cart.note || "";
     $("orderbar").classList.toggle("show", cart.lines.length > 0);
     $("obCnt").textContent = cartCups(); $("obTot").textContent = rp(t);
@@ -577,17 +617,27 @@ textarea:focus { outline: none; border-color: var(--yellow); background: #fff; }
   });
   $("clearCart").onclick = function () { if (!cart.lines.length) return; ask("Clear this order?", "All drinks in the current order will be removed.", "Clear", function () { cart = { lines: [], note: "", pay: "" }; saveCart(); renderCart(); }); };
   $("note").addEventListener("input", function () { cart.note = this.value; saveCart(); });
-  $("payQ").onclick = function () { cart.pay = "qris"; saveCart(); renderCart(); };
+  $("payQ").onclick = function () { cart.pay = "qris"; cart.cash = 0; saveCart(); renderCart(); };
   $("payC").onclick = function () { cart.pay = "cash"; saveCart(); renderCart(); };
+  $("cashIn").addEventListener("input", function () {
+    var d = this.value.replace(/\D/g, "").slice(0, 9); cart.cash = d ? +d : 0;
+    this.value = d ? fmtIn(+d) : ""; saveCart(); renderCart();
+  });
+  $("quick").addEventListener("click", function (e) {
+    var b = e.target.closest("[data-cash]"); if (!b) return;
+    cart.cash = b.dataset.cash === "exact" ? cartTotal() : +b.dataset.cash; saveCart(); renderCart();
+  });
   $("send").onclick = function () {
     if (!cart.lines.length || !cart.pay || sending) return;
     var snap = JSON.parse(JSON.stringify(cart));
     var o = { items: cart.lines.map(function (l) { return { k: l.k, name: BY[l.k].name, size: l.s, qty: l.q, price: priceOf(l.k, l.s) }; }),
               note: (cart.note || "").trim(), pay: cart.pay, total: cartTotal(), cups: cartCups(), created: Date.now(), status: "pending" };
+    var cs0 = cashState(o.total), chg = cs0.state === "change" ? cs0.change : 0;
+    if (cs0.state === "change" || cs0.state === "exact") { o.paid = +cart.cash; o.change = chg; }
     sending = true; renderCart();
     store.create(o).then(function (no) {
       sending = false; cart = { lines: [], note: "", pay: "" }; saveCart(); closeCart(); renderCart();
-      toast("Order #" + pad(no) + " sent to the kitchen");
+      toast(chg ? "Order #" + pad(no) + " sent · give back " + rp(chg) : "Order #" + pad(no) + " sent to the kitchen");
     }, function (e) { sending = false; cart = snap; saveCart(); renderCart(); failMsg("The order")(e); });
   };
   function openCart() { $("cart").classList.add("open"); $("backdrop").classList.add("on"); }
@@ -634,7 +684,7 @@ textarea:focus { outline: none; border-color: var(--yellow); background: #fff; }
     $("log").innerHTML = done.map(function (o) {
       var lines = o.items.map(function (it) { return it.qty + "× " + esc(it.name) + " (" + (it.size === "j" ? "Jumbo" : "Regular") + ")"; }).join("<br>");
       return '<div class="rec"><span class="no">#' + pad(o.no) + '</span><div class="it">' + lines + "<small>" + dayLabel(o.done || o.created) + "</small>" + (o.note ? '<span class="nt">Note: ' + esc(o.note) + "</span>" : "") + "</div>" +
-        '<div class="am"><span class="pay ' + (o.pay === "qris" ? "q" : "c") + '">' + ico(o.pay === "qris" ? I.qr : I.cash) + (o.pay === "qris" ? "QRIS" : "Cash") + "</span><br>" + rp(o.total) + "</div>" +
+        '<div class="am"><span class="pay ' + (o.pay === "qris" ? "q" : "c") + '">' + ico(o.pay === "qris" ? I.qr : I.cash) + (o.pay === "qris" ? "QRIS" : "Cash") + "</span><br>" + rp(o.total) + (o.pay === "cash" && o.paid ? '<span class="chg">Paid ' + rp(o.paid) + (o.change ? " · change " + rp(o.change) : " · exact") + "</span>" : "") + "</div>" +
         '<div class="acts"><button class="btn ghost" data-back="' + o.id + '">' + ico(I.undo) + ' Back to kitchen</button><button class="btn danger" data-del="' + o.id + '">' + ico(I.trash) + " Remove</button></div></div>";
     }).join("");
   }
@@ -648,11 +698,11 @@ textarea:focus { outline: none; border-color: var(--yellow); background: #fff; }
       function () { store.clear().then(function () { toast("All orders cleared"); }, failMsg("Clearing")); });
   };
   $("csv").onclick = function () {
-    var rows = [["Order", "Date", "Time done", "Payment", "Items", "Note", "Total (Rp)"]];
+    var rows = [["Order", "Date", "Time done", "Payment", "Items", "Note", "Total (Rp)", "Cash received (Rp)", "Change (Rp)"]];
     doneOrders().slice().reverse().forEach(function (o) {
       var d = new Date(o.done || o.created);
       rows.push([pad(o.no), d.getFullYear() + "-" + ("0" + (d.getMonth() + 1)).slice(-2) + "-" + ("0" + d.getDate()).slice(-2), hhmm(o.done || o.created), o.pay === "qris" ? "QRIS" : "Cash",
-        o.items.map(function (it) { return it.qty + "x " + it.name + " (" + (it.size === "j" ? "Jumbo" : "Regular") + ")"; }).join("; "), o.note, o.total]);
+        o.items.map(function (it) { return it.qty + "x " + it.name + " (" + (it.size === "j" ? "Jumbo" : "Regular") + ")"; }).join("; "), o.note, o.total, o.paid || "", o.change || ""]);
     });
     var csv = "\ufeff" + rows.map(function (r) { return r.map(function (v) { return '"' + String(v).replace(/"/g, '""') + '"'; }).join(","); }).join("\r\n");
     var a = document.createElement("a"), d2 = new Date();
